@@ -1,0 +1,12 @@
+{
+  "name": "@aily-project/sdk-avr",
+  "version": "1.8.6",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+
+  },
+  "author": "",
+  "license": "ISC"
+}
