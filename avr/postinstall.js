@@ -12,7 +12,7 @@ const _7zaPath = process.env.AILY_7ZA_PATH || '7za.exe';
 function readdir(dir) {
     return new Promise((resolve, reject) => {
         fs.readdir(dir, (err, files) => {
-            if (err) reject(err);
+            if (err) resolve([]); // 忽略错误，返回空数组
             else resolve(files);
         });
     });
