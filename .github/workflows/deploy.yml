@@ -91,15 +91,17 @@ jobs:
           
           # 获取当前版本号
           CURRENT_VERSION=$(node -p "require('./package.json').version")
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
           echo "Current version: $CURRENT_VERSION"
           
-          # 检查是否已在 NPM registry 上发布
-          if npm view $(node -p "require('./package.json').name")@$CURRENT_VERSION version &> /dev/null; then
-            echo "版本 $CURRENT_VERSION 已存在，尝试取消已发布..."
-            # 如果已存在，则取消发布并强制发布
-            npm unpublish $(node -p "require('./package.json').name")@$CURRENT_VERSION --force
+          # 检查当前版本是否已在 NPM registry 上发布
+          if npm view $PACKAGE_NAME@$CURRENT_VERSION version &> /dev/null; then
+            echo "版本 $CURRENT_VERSION 已存在，尝试取消发布..."
+            npm unpublish $PACKAGE_NAME@$CURRENT_VERSION --force
           fi
 
+          # 等待一段时间确保取消发布生效
+          sleep 5
+          
           # 发布
-          npm version patch -m "chore(release): %s [skip ci]"
           npm publish --access public
