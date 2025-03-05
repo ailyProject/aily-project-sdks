@@ -6,8 +6,6 @@ const srcDir = __dirname;
 const destDir = process.env.AILY_SDK_PATH;
 const _7zaPath = process.env.AILY_7ZA_PATH || '7za.exe';
 
-// test
-
 fs.readdir(srcDir, (err, files) => {
     if (err) {
         console.error('无法读取目录:', err);
@@ -15,16 +13,19 @@ fs.readdir(srcDir, (err, files) => {
     }
     files.filter(file => path.extname(file).toLowerCase() === '.7z')
         .forEach(file => {
-            const srcPath = path.join(srcDir, file);
-            const destPath = path.join(destDir, file);
+            try {
+                const srcPath = path.join(srcDir, file);
 
-            unpack(srcPath, destDir, err => {
-                if (err) {
-                    console.error(`解压 ${file} 失败:`, err);
-                } else {
-                    console.log(`已解压 ${file} 到 ${destDir}`);
-                }
-            });
+                unpack(srcPath, destDir, err => {
+                    if (err) {
+                        console.error(`解压 ${file} 失败:`, err);
+                    } else {
+                        console.log(`已解压 ${file} 到 ${destDir}`);
+                    }
+                });
+            } catch (e) {
+                console.error(`解压 ${file} 失败:`, e);
+            }
         });
 });
 
