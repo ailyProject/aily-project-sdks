@@ -2,8 +2,10 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const path = require('path');
 
-const srcDir = __dirname;
-const destDir = process.env.AILY_SDK_PATH || '';
+// 确保 __dirname 有值，如果没有则使用当前工作目录
+const srcDir = __dirname || process.cwd();
+// 确保目标目录有值，空字符串会导致解压到当前目录
+const destDir = process.env.AILY_SDK_PATH || process.cwd();
 const _7zaPath = process.env.AILY_7ZA_PATH || '7za.exe';
 
 // 使用传统的回调式 API 并用 Promise 包装
