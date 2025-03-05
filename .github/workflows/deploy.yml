@@ -62,10 +62,10 @@ jobs:
       - name: echo matrix
         run: echo "${{ toJson(matrix) }}"
 
-      # - name: Checkout code
-      #   uses: actions/checkout@v3
-      #   with:
-      #     token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GHB_TOKEN }}
       
       - name: Setup Node.js
         uses: actions/setup-node@v3

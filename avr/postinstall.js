@@ -6,8 +6,6 @@ const srcDir = __dirname;
 const destDir = process.env.AILY_SDK_PATH;
 const _7zaPath = process.env.AILY_7ZA_PATH || '7za.exe';
 
-// test
-
 fs.readdir(srcDir, (err, files) => {
     if (err) {
         console.error('无法读取目录:', err);
