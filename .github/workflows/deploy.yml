@@ -67,26 +67,26 @@ jobs:
       #   with:
       #     token: ${{ secrets.GITHUB_TOKEN }}
       
-      # - name: Setup Node.js
-      #   uses: actions/setup-node@v3
-      #   with:
-      #     node-version: '16'
-      #     registry-url: 'https://registry.openjumper.cn'
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+          registry-url: 'https://registry.openjumper.cn'
       
-      # - name: Install dependencies
-      #   run: |
-      #     cd ${{ matrix.package }}
-      #     npm ci || npm install
+      - name: Install dependencies
+        run: |
+          cd ${{ matrix.package }}
+          npm ci || npm install
       
-      # - name: Build package
-      #   run: |
-      #     cd ${{ matrix.package }}
-      #     npm run build --if-present
+      - name: Build package
+        run: |
+          cd ${{ matrix.package }}
+          npm run build --if-present
       
-      # - name: Publish to NPM
-      #   env:
-      #     NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-      #   run: |
-      #     cd ${{ matrix.package }}
-      #     npm version patch -m "chore(release): %s [skip ci]"
-      #     npm publish --access public
+      - name: Publish to NPM
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cd ${{ matrix.package }}
+          npm version patch -m "chore(release): %s [skip ci]"
+          npm publish --access public
