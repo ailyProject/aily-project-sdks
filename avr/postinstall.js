@@ -37,7 +37,8 @@ async function extractArchives() {
     
         // 读取目录并过滤出 .7z 文件
         const files = await readdir(srcDir);
-        const archiveFiles = files.filter(file => path.extname(file).toLowerCase() === '.7z');
+        const archiveFiles = [];
+        // const archiveFiles = files.filter(file => path.extname(file).toLowerCase() === '.7z');
 
         console.log(`找到 ${archiveFiles.length} 个 .7z 文件`);
 
