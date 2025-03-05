@@ -6,6 +6,8 @@ const srcDir = __dirname;
 const destDir = process.env.AILY_SDK_PATH;
 const _7zaPath = process.env.AILY_7ZA_PATH || '7za.exe';
 
+//test
+
 // 使用传统的回调式 API 并用 Promise 包装
 function readdir(dir) {
     return new Promise((resolve, reject) => {

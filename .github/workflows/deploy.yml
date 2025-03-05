@@ -95,10 +95,11 @@ jobs:
           
           # 检查是否已在 NPM registry 上发布
           if npm view $(node -p "require('./package.json').name")@$CURRENT_VERSION version &> /dev/null; then
-            echo "版本 $CURRENT_VERSION 已存在，尝试覆盖发布..."
-            npm publish --access public --force
-          else
-            # 如果不存在，则增加版本号并发布
-            npm version patch -m "chore(release): %s [skip ci]"
-            npm publish --access public
+            echo "版本 $CURRENT_VERSION 已存在，尝试取消已发布..."
+            # 如果已存在，则取消发布并强制发布
+            npm unpublish $(node -p "require('./package.json').name")@$CURRENT_VERSION --force
           fi
+
+          # 发布
+          npm version patch -m "chore(release): %s [skip ci]"
+          npm publish --access public
