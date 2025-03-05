@@ -42,15 +42,15 @@ async function extractArchives() {
         console.log(`找到 ${archiveFiles.length} 个 .7z 文件`);
 
         // 处理每个压缩文件
-        for (const file of archiveFiles) {
-            const srcPath = path.join(srcDir, file);
-            try {
-                await unpack(srcPath, destDir);
-                console.log(`已解压 ${file} 到 ${destDir}`);
-            } catch (error) {
-                console.error(`解压 ${file} 失败:`, error);
-            }
-        }
+        // for (const file of archiveFiles) {
+        //     const srcPath = path.join(srcDir, file);
+        //     try {
+        //         await unpack(srcPath, destDir);
+        //         console.log(`已解压 ${file} 到 ${destDir}`);
+        //     } catch (error) {
+        //         console.error(`解压 ${file} 失败:`, error);
+        //     }
+        // }
     } catch (err) {
         console.error('无法读取目录:', err);
     }
