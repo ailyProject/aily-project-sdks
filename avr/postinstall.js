@@ -1,68 +1,75 @@
-const fs = require('fs')
-const child_process = require('child_process')
+const fs = require('fs');
+const { spawn } = require('child_process');
 const path = require('path');
 
 const srcDir = __dirname;
 const destDir = process.env.AILY_SDK_PATH;
 const _7zaPath = process.env.AILY_7ZA_PATH || '7za.exe';
 
-fs.readdir(srcDir, (err, files) => {
-    if (err) {
-        console.error('无法读取目录:', err);
-        return;
-    }
-    files.filter(file => path.extname(file).toLowerCase() === '.7z')
-        .forEach(file => {
-            try {
-                const srcPath = path.join(srcDir, file);
+// 使用传统的回调式 API 并用 Promise 包装
+function readdir(dir) {
+    return new Promise((resolve, reject) => {
+        fs.readdir(dir, (err, files) => {
+            if (err) reject(err);
+            else resolve(files);
+        });
+    });
+}
 
-                unpack(srcPath, destDir, err => {
-                    if (err) {
-                        console.error(`解压 ${file} 失败:`, err);
-                    } else {
-                        console.log(`已解压 ${file} 到 ${destDir}`);
-                    }
-                });
-            } catch (e) {
-                console.error(`解压 ${file} 失败:`, e);
+// 使用 Promise 和 async/await 简化异步操作
+async function extractArchives() {
+    try {
+        // 读取目录并过滤出 .7z 文件
+        const files = await readdir(srcDir);
+        const archiveFiles = files.filter(file => path.extname(file).toLowerCase() === '.7z');
+
+        // 处理每个压缩文件
+        for (const file of archiveFiles) {
+            const srcPath = path.join(srcDir, file);
+            try {
+                await unpack(srcPath, destDir);
+                console.log(`已解压 ${file} 到 ${destDir}`);
+            } catch (error) {
+                console.error(`解压 ${file} 失败:`, error);
+            }
+        }
+    } catch (err) {
+        console.error('无法读取目录:', err);
+    }
+}
+
+// 使用 Promise 封装解压函数
+function unpack(archivePath, destination) {
+    return new Promise((resolve, reject) => {
+        const args = ['x', archivePath, '-y', '-o' + destination];
+        const proc = spawn(_7zaPath, args, { windowsHide: true });
+
+        let output = '';
+
+        proc.stdout.on('data', function (chunk) {
+            output += chunk.toString();
+        });
+        proc.stderr.on('data', function (chunk) {
+            output += chunk.toString();
+        });
+
+        proc.on('error', function (err) {
+            console.error('7-zip 错误:', err);
+            reject(err);
+        });
+
+        proc.on('exit', function (code) {
+            if (code === 0) {
+                resolve();
+            } else {
+                const error = new Error(`7-zip 退出码 ${code}\n${output}`);
+                reject(error);
             }
         });
+    });
+}
+
+// 执行主函数
+extractArchives().catch(function (err) {
+    console.error('执行失败:', err);
 });
-
-function unpack(pathToPack, destPathOrCb, cb) {
-    if (typeof destPathOrCb === 'function' && cb === undefined) {
-        cb = destPathOrCb;
-        _7zRun(_7zaPath, ['x', pathToPack, '-y'], cb);
-    } else {
-        _7zRun(_7zaPath, ['x', pathToPack, '-y', '-o' + destPathOrCb], cb);
-    }
-}
-
-function _7zRun(bin, args, cb) {
-    // cb = onceify(cb);
-    const runError = new Error(); // get full stack trace
-    const proc = child_process.spawn(bin, args, { windowsHide: true });
-    let output = '';
-    proc.on('error', function (err) {
-        console.error('7-zip error:', err);
-        cb(err);
-    });
-    proc.on('exit', function (code) {
-        let result = null;
-        if (args[0] === 'l') {
-            result = parseListOutput(output);
-        }
-        if (code) {
-            runError.message = `7-zip exited with code ${code}\n${output}`;
-        }
-        console.log("output:", output);
-        cb(code ? runError : null, result);
-    });
-    proc.stdout.on('data', (chunk) => {
-        output += chunk.toString();
-    });
-    proc.stderr.on('data', (chunk) => {
-        output += chunk.toString();
-    });
-}
-

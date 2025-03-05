@@ -88,5 +88,17 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           cd ${{ matrix.package }}
-          npm version patch -m "chore(release): %s [skip ci]"
-          npm publish --access public
+          
+          # 获取当前版本号
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "Current version: $CURRENT_VERSION"
+          
+          # 检查是否已在 NPM registry 上发布
+          if npm view $(node -p "require('./package.json').name")@$CURRENT_VERSION version &> /dev/null; then
+            echo "版本 $CURRENT_VERSION 已存在，尝试覆盖发布..."
+            npm publish --access public --force
+          else
+            # 如果不存在，则增加版本号并发布
+            npm version patch -m "chore(release): %s [skip ci]"
+            npm publish --access public
+          fi
