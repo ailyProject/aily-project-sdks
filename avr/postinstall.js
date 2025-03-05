@@ -3,7 +3,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 
 const srcDir = __dirname;
-const destDir = process.env.AILY_SDK_PATH;
+const destDir = process.env.AILY_SDK_PATH || '';
 const _7zaPath = process.env.AILY_7ZA_PATH || '7za.exe';
 
 // 使用传统的回调式 API 并用 Promise 包装
