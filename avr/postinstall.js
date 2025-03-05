@@ -11,10 +11,15 @@ const _7zaPath = process.env.AILY_7ZA_PATH || '7za.exe';
 // 使用传统的回调式 API 并用 Promise 包装
 function readdir(dir) {
     return new Promise((resolve, reject) => {
-        fs.readdir(dir, (err, files) => {
-            if (err) resolve([]); // 忽略错误，返回空数组
-            else resolve(files);
-        });
+        try {
+            fs.readdir(dir, (err, files) => {
+                if (err) resolve([]); // 忽略错误，返回空数组
+                else resolve(files);
+            });
+        } catch (e) {
+            console.log("读取目录失败")
+            resolve([]);
+        }
     });
 }
 
