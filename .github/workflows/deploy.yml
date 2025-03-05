@@ -3,7 +3,7 @@ name: Check and Deploy to NPM
 on:
   push:
     branches: 
-      - main
+      - deploy
 
 jobs:
   detect-changes:
