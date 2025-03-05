@@ -83,6 +83,10 @@ function unpack(archivePath, destination) {
 }
 
 // 执行主函数
-extractArchives().catch(function (err) {
-    console.error('执行失败:', err);
-});
+try {
+    extractArchives().catch(function (err) {
+        console.error('执行失败:', err);
+    });
+} catch (e) {
+    console.log("解压失败")
+}
