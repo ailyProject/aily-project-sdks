@@ -21,9 +21,20 @@ function readdir(dir) {
 // 使用 Promise 和 async/await 简化异步操作
 async function extractArchives() {
     try {
+        console.log(`源目录: ${srcDir}`);
+        console.log(`目标目录: ${destDir}`);
+
+        // 确保源目录存在
+        if (!fs.existsSync(srcDir)) {
+            console.error(`源目录不存在: ${srcDir}`);
+            return;
+        }
+    
         // 读取目录并过滤出 .7z 文件
         const files = await readdir(srcDir);
         const archiveFiles = files.filter(file => path.extname(file).toLowerCase() === '.7z');
+
+        console.log(`找到 ${archiveFiles.length} 个 .7z 文件`);
 
         // 处理每个压缩文件
         for (const file of archiveFiles) {
