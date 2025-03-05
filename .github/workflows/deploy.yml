@@ -73,10 +73,10 @@ jobs:
           node-version: '16'
           registry-url: 'https://registry.openjumper.cn'
       
-      - name: Install dependencies
-        run: |
-          cd ${{ matrix.package }}
-          npm ci || npm install
+      # - name: Install dependencies
+      #   run: |
+      #     cd ${{ matrix.package }}
+      #     npm ci || npm install
       
       - name: Build package
         run: |
