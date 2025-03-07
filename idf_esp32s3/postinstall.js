@@ -66,15 +66,15 @@ async function extractArchives() {
                 await unpack(srcPath, destDir);
                 console.log(`已解压 ${file} 到 ${destDir}`);
 
-                // // 重命名
-                // const newName = path.basename(file, '.7z');
-                // const destPath = path.join(destDir, newName);
+                // 重命名
+                const newName = path.basename(file, '.7z');
+                const destPath = path.join(destDir, newName);
 
-                // // 将newName中的@替换为_
-                // const newName2 = newName.replace('@', '_');
-                // const newPath = path.join(destDir, newName2);
-                // fs.renameSync(destPath, newPath);
-                // console.log(`已重命名 ${destPath} 为 ${newPath}`);
+                // 将newName中的@替换为_
+                const newName2 = newName.replace('@', '_');
+                const newPath = path.join(destDir, newName2);
+                fs.renameSync(destPath, newPath);
+                console.log(`已重命名 ${destPath} 为 ${newPath}`);
 
             } catch (error) {
                 console.error(`解压 ${file} 失败:`, error);
