@@ -59,10 +59,10 @@ async function extractArchives() {
                 continue;
             }
 
-            const srcPath = path.join(srcDir, file);
-            console.log(`准备解压: ${srcPath}`);
-
             try {
+                const srcPath = path.join(srcDir, file);
+                console.log(`准备解压: ${srcPath}`);
+
                 await unpack(srcPath, destDir);
                 console.log(`已解压 ${file} 到 ${destDir}`);
 
@@ -73,8 +73,56 @@ async function extractArchives() {
                 // 将newName中的@替换为_
                 const newName2 = newName.replace('@', '_');
                 const newPath = path.join(destDir, newName2);
-                fs.renameSync(destPath, newPath);
-                console.log(`已重命名 ${destPath} 为 ${newPath}`);
+
+                // 判断是否存在目标目录，如果存在则删除
+                if (!fs.existsSync(newPath)) {
+                    fs.renameSync(destPath, newPath);
+                    console.log(`已重命名 ${destPath} 为 ${newPath}`);
+                }
+
+                // Check if post-install script exists and run it
+                const isWindows = process.platform === 'win32';
+                const scriptName = isWindows ? 'post_install.bat' : 'post_install.sh';
+                const scriptPath = path.join(newPath, scriptName);
+
+                if (fs.existsSync(scriptPath)) {
+                    console.log(`Running post-install script: ${scriptPath}`);
+
+                    // Make sure the script is executable on Unix
+                    if (!isWindows) {
+                        fs.chmodSync(scriptPath, '755');
+                    }
+
+                    // Prepare command and arguments
+                    const command = isWindows ? 'cmd' : 'sh';
+                    const args = isWindows ? ['/c', scriptPath] : [scriptPath];
+
+                    // Execute the script
+                    await new Promise((resolve, reject) => {
+                        const proc = spawn(command, args, {
+                            cwd: newPath,
+                            stdio: 'inherit',
+                            windowsHide: true
+                        });
+
+                        proc.on('exit', (code) => {
+                            if (code === 0) {
+                                console.log(`Post-install script completed successfully.`);
+                                resolve();
+                            } else {
+                                console.error(`Post-install script failed with code ${code}`);
+                                reject(new Error(`Script exited with code ${code}`));
+                            }
+                        });
+
+                        proc.on('error', (err) => {
+                            console.error('Failed to run post-install script:', err);
+                            reject(err);
+                        });
+                    });
+                } else {
+                    console.log(`No post-install script found at ${scriptPath}`);
+                }
 
             } catch (error) {
                 console.error(`解压 ${file} 失败:`, error);
