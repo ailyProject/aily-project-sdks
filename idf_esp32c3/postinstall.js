@@ -18,6 +18,36 @@ function readdir(dir) {
     });
 }
 
+// 自定义递归删除函数
+function deleteFolderRecursive(dirPath) {
+    if (fs.existsSync(dirPath)) {
+        fs.readdirSync(dirPath).forEach(file => {
+            const curPath = path.join(dirPath, file);
+            if (fs.lstatSync(curPath).isDirectory()) {
+                // 递归删除子目录
+                deleteFolderRecursive(curPath);
+            } else {
+                // 删除文件，忽略错误
+                try {
+                    fs.unlinkSync(curPath);
+                } catch (e) {
+                    console.warn(`无法删除文件: ${curPath}`, e);
+                }
+            }
+        });
+        // 删除目录本身
+        try {
+            fs.rmdirSync(dirPath);
+        } catch (e) {
+            console.warn(`无法删除目录: ${dirPath}`, e);
+            // 如果删除失败，尝试重命名
+            const tempPath = path.join(path.dirname(dirPath), `_temp_${Date.now()}`);
+            fs.renameSync(dirPath, tempPath);
+            deleteFolderRecursive(tempPath);
+        }
+    }
+}
+
 // 使用 Promise 和 async/await 简化异步操作
 async function extractArchives() {
     try {
@@ -73,10 +103,18 @@ async function extractArchives() {
                 const newPath = path.join(destDir, newName2);
 
                 // 判断是否存在目标目录，如果存在则删除
-                if (!fs.existsSync(newPath)) {
-                    fs.renameSync(destPath, newPath);
-                    console.log(`已重命名 ${destPath} 为 ${newPath}`);
+                if (fs.existsSync(newPath)) {
+                    try {
+                        deleteFolderRecursive(newPath);
+                        console.log(`已删除目录: ${newPath}`);
+                    } catch (err) {
+                        console.error(`无法删除目录: ${newPath}`, err);
+                        continue
+                    }
                 }
+
+                fs.renameSync(destPath, newPath);
+                console.log(`已重命名 ${destPath} 为 ${newPath}`);
 
                 // Check if post-install script exists and run it
                 const isWindows = process.platform === 'win32';
