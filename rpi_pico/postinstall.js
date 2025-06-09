@@ -18,6 +18,28 @@ function readdir(dir) {
     });
 }
 
+// 重试函数封装
+async function withRetry(fn, maxRetries = 3, retryDelay = 1000) {
+    let lastError;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            return await fn();
+        } catch (error) {
+            lastError = error;
+            console.log(`操作失败 (尝试 ${attempt}/${maxRetries}): ${error.message}`);
+
+            if (attempt < maxRetries) {
+                console.log(`等待 ${retryDelay / 1000} 秒后重试...`);
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
+            }
+        }
+    }
+
+    throw new Error(`经过 ${maxRetries} 次尝试后操作仍然失败: ${lastError.message}`);
+}
+
+
 // 自定义递归删除函数
 function deleteFolderRecursive(dirPath) {
     if (fs.existsSync(dirPath)) {
@@ -45,6 +67,84 @@ function deleteFolderRecursive(dirPath) {
             fs.renameSync(dirPath, tempPath);
             deleteFolderRecursive(tempPath);
         }
+    }
+}
+
+
+async function handler(file) {
+    const srcPath = path.join(srcDir, file);
+    console.log(`准备解压: ${srcPath}`);
+
+    await unpack(srcPath, destDir).catch(err => {
+        console.error(`解压 ${file} 失败:`, err);
+        throw err; // 重新抛出错误以便重试
+    });
+
+    console.log(`已解压 ${file} 到 ${destDir}`);
+
+    // 重命名
+    const newName = path.basename(file, '.7z');
+    const destPath = path.join(destDir, newName);
+
+    // 将newName中的@替换为_
+    const newName2 = newName.replace('@', '_');
+    const newPath = path.join(destDir, newName2);
+
+    // 判断是否存在目标目录，如果存在则删除
+    if (fs.existsSync(newPath)) {
+        try {
+            deleteFolderRecursive(newPath);
+            console.log(`已删除目录: ${newPath}`);
+        } catch (err) {
+            console.error(`无法删除目录: ${newPath}`, err);
+            throw new Error(`删除目录失败: ${newPath}`);
+        }
+    }
+
+    fs.renameSync(destPath, newPath);
+    console.log(`已重命名 ${destPath} 为 ${newPath}`);
+
+    // Check if post-install script exists and run it
+    const isWindows = process.platform === 'win32';
+    const scriptName = isWindows ? 'post_install.bat' : 'post_install.sh';
+    const scriptPath = path.join(newPath, scriptName);
+
+    if (fs.existsSync(scriptPath)) {
+        console.log(`Running post-install script: ${scriptPath}`);
+
+        // Make sure the script is executable on Unix
+        if (!isWindows) {
+            fs.chmodSync(scriptPath, '755');
+        }
+
+        // Prepare command and arguments
+        const command = isWindows ? 'cmd' : 'sh';
+        const args = isWindows ? ['/c', scriptPath] : [scriptPath];
+
+        // Execute the script
+        await new Promise((resolve, reject) => {
+            const proc = spawn(command, args, {
+                cwd: newPath,
+                stdio: 'inherit',
+                windowsHide: true
+            });
+
+            proc.on('exit', (code) => {
+                if (code === 0) {
+                    console.log(`Post-install script completed successfully.`);
+                } else {
+                    console.error(`Post-install script failed with code ${code}`);
+                    throw new Error(`Script exited with code ${code}`);
+                }
+            });
+
+            proc.on('error', (err) => {
+                console.error('Failed to run post-install script:', err);
+                throw new Error(`Failed to run post-install script: ${err.message}`);
+            });
+        });
+    } else {
+        console.log(`No post-install script found at ${scriptPath}`);
     }
 }
 
@@ -88,78 +188,9 @@ async function extractArchives() {
             }
 
             try {
-                const srcPath = path.join(srcDir, file);
-                console.log(`准备解压: ${srcPath}`);
-
-                await unpack(srcPath, destDir);
-                console.log(`已解压 ${file} 到 ${destDir}`);
-
-                // 重命名
-                const newName = path.basename(file, '.7z');
-                const destPath = path.join(destDir, newName);
-
-                // 将newName中的@替换为_
-                const newName2 = newName.replace('@', '_');
-                const newPath = path.join(destDir, newName2);
-
-                // 判断是否存在目标目录，如果存在则删除
-                if (fs.existsSync(newPath)) {
-                    try {
-                        deleteFolderRecursive(newPath);
-                        console.log(`已删除目录: ${newPath}`);
-                    } catch (err) {
-                        console.error(`无法删除目录: ${newPath}`, err);
-                        continue
-                    }
-                }
-
-                fs.renameSync(destPath, newPath);
-                console.log(`已重命名 ${destPath} 为 ${newPath}`);
-
-                // Check if post-install script exists and run it
-                const isWindows = process.platform === 'win32';
-                const scriptName = isWindows ? 'post_install.bat' : 'post_install.sh';
-                const scriptPath = path.join(newPath, scriptName);
-
-                if (fs.existsSync(scriptPath)) {
-                    console.log(`Running post-install script: ${scriptPath}`);
-
-                    // Make sure the script is executable on Unix
-                    if (!isWindows) {
-                        fs.chmodSync(scriptPath, '755');
-                    }
-
-                    // Prepare command and arguments
-                    const command = isWindows ? 'cmd' : 'sh';
-                    const args = isWindows ? ['/c', scriptPath] : [scriptPath];
-
-                    // Execute the script
-                    await new Promise((resolve, reject) => {
-                        const proc = spawn(command, args, {
-                            cwd: newPath,
-                            stdio: 'inherit',
-                            windowsHide: true
-                        });
-
-                        proc.on('exit', (code) => {
-                            if (code === 0) {
-                                console.log(`Post-install script completed successfully.`);
-                                resolve();
-                            } else {
-                                console.error(`Post-install script failed with code ${code}`);
-                                reject(new Error(`Script exited with code ${code}`));
-                            }
-                        });
-
-                        proc.on('error', (err) => {
-                            console.error('Failed to run post-install script:', err);
-                            reject(err);
-                        });
-                    });
-                } else {
-                    console.log(`No post-install script found at ${scriptPath}`);
-                }
-
+                await withRetry(async () => {
+                    await handler(file);
+                }, 3, 2000); // 重试3次，每次间隔2秒
             } catch (error) {
                 console.error(`解压 ${file} 失败:`, error);
             }
