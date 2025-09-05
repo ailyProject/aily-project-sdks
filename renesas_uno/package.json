@@ -1,6 +1,6 @@
 {
   "name": "@aily-project/sdk-renesas_uno",
-  "version": "1.3.2",
+  "version": "1.5.1",
   "description": "",
   "main": "index.js",
   "scripts": {
