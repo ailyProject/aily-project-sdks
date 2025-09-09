@@ -1,22 +1,16 @@
 const fs = require('fs');
 const { spawn } = require('child_process');
 const path = require('path');
+const https = require('https');
+
+// test
 
 // 确保 __dirname 有值，如果没有则使用当前工作目录
 const srcDir = __dirname || "";
 // 确保目标目录有值，空字符串会导致解压到当前目录
 const destDir = process.env.AILY_SDK_PATH || "";
 const _7zaPath = process.env.AILY_7ZA_PATH || "";
-
-// 使用传统的回调式 API 并用 Promise 包装
-function readdir(dir) {
-    return new Promise((resolve, reject) => {
-        fs.readdir(dir, (err, files) => {
-            if (err) reject(err);
-            else resolve(files);
-        });
-    });
-}
+const zipDownloadBaseUrl = process.env.AILY_ZIP_URL + '/sdk';
 
 
 // 重试函数封装
@@ -41,112 +35,95 @@ async function withRetry(fn, maxRetries = 3, retryDelay = 1000) {
 }
 
 
-// 自定义递归删除函数
-function deleteFolderRecursive(dirPath) {
-    if (fs.existsSync(dirPath)) {
-        fs.readdirSync(dirPath).forEach(file => {
-            const curPath = path.join(dirPath, file);
-            if (fs.lstatSync(curPath).isDirectory()) {
-                // 递归删除子目录
-                deleteFolderRecursive(curPath);
-            } else {
-                // 删除文件，忽略错误
-                try {
-                    fs.unlinkSync(curPath);
-                } catch (e) {
-                    console.warn(`无法删除文件: ${curPath}`, e);
-                }
-            }
-        });
-        // 删除目录本身
-        try {
-            fs.rmdirSync(dirPath);
-        } catch (e) {
-            console.warn(`无法删除目录: ${dirPath}`, e);
-            // 如果删除失败，尝试重命名
-            const tempPath = path.join(path.dirname(dirPath), `_temp_${Date.now()}`);
-            fs.renameSync(dirPath, tempPath);
-            deleteFolderRecursive(tempPath);
-        }
-    }
+function getZipFileName() {
+    // 读取package.json文件，获取name和version
+    const prefix = "@aily-project/sdk-";
+    const packageJson = require('./package.json');
+    const packageName = packageJson.name.replace(prefix, "");
+    const packageVersion = packageJson.version;
+    return `${packageName}@${packageVersion}.7z`;
 }
 
 
-async function handler(file) {
-    const srcPath = path.join(srcDir, file);
-    console.log(`准备解压: ${srcPath}`);
+function getZipFile() {
+    const zipFileName = getZipFileName();
+    const downloadUrl = `${zipDownloadBaseUrl}/${zipFileName}`;
 
-    await unpack(srcPath, destDir).catch(err => {
-        console.error(`解压 ${file} 失败:`, err);
-        throw err; // 重新抛出错误以便重试
-    });
+    return new Promise((resolve, reject) => {
+        console.log(`正在下载: ${downloadUrl}`);
+        const filePath = path.join(__dirname, zipFileName);
 
-    console.log(`已解压 ${file} 到 ${destDir}`);
-
-    // 重命名
-    const newName = path.basename(file, '.7z');
-    const destPath = path.join(destDir, newName);
-
-    // 将newName中的@替换为_
-    const newName2 = newName.replace('@', '_');
-    const newPath = path.join(destDir, newName2);
-
-    // 判断是否存在目标目录，如果存在则删除
-    if (fs.existsSync(newPath)) {
-        try {
-            deleteFolderRecursive(newPath);
-            console.log(`已删除目录: ${newPath}`);
-        } catch (err) {
-            console.error(`无法删除目录: ${newPath}`, err);
-            throw new Error(`删除目录失败: ${newPath}`);
-        }
-    }
-
-    fs.renameSync(destPath, newPath);
-    console.log(`已重命名 ${destPath} 为 ${newPath}`);
-
-    // Check if post-install script exists and run it
-    const isWindows = process.platform === 'win32';
-    const scriptName = isWindows ? 'post_install.bat' : 'post_install.sh';
-    const scriptPath = path.join(newPath, scriptName);
-
-    if (fs.existsSync(scriptPath)) {
-        console.log(`Running post-install script: ${scriptPath}`);
-
-        // Make sure the script is executable on Unix
-        if (!isWindows) {
-            fs.chmodSync(scriptPath, '755');
+        if (fs.existsSync(filePath)) {
+            console.log(`文件已存在: ${zipFileName}`);
+            resolve(zipFileName);
+            return;
         }
 
-        // Prepare command and arguments
-        const command = isWindows ? 'cmd' : 'sh';
-        const args = isWindows ? ['/c', scriptPath] : [scriptPath];
+        const fileStream = fs.createWriteStream(filePath);
 
-        // Execute the script
-        await new Promise((resolve, reject) => {
-            const proc = spawn(command, args, {
-                cwd: newPath,
-                stdio: 'inherit',
-                windowsHide: true
-            });
+        https.get(downloadUrl, (response) => {
+            if (response.statusCode !== 200) {
+                fileStream.close();
+                fs.unlink(filePath, () => { });
+                reject(new Error(`下载失败: 状态码 ${response.statusCode}`));
+                return;
+            }
 
-            proc.on('exit', (code) => {
-                if (code === 0) {
-                    console.log(`Post-install script completed successfully.`);
-                } else {
-                    console.error(`Post-install script failed with code ${code}`);
-                    throw new Error(`Script exited with code ${code}`);
+            // 获取文件总大小
+            const totalSize = parseInt(response.headers['content-length'] || 0, 10);
+            let downloadedSize = 0;
+            let lastPercentage = -1;
+
+            // 设置下载进度显示
+            response.on('data', (chunk) => {
+                downloadedSize += chunk.length;
+
+                // 计算下载百分比
+                if (totalSize > 0) {
+                    const percentage = Math.floor((downloadedSize / totalSize) * 100);
+
+                    // 每增加1%才更新进度，避免过多输出
+                    if (percentage > lastPercentage) {
+                        lastPercentage = percentage;
+                        const downloadSizeMB = (downloadedSize / (1024 * 1024)).toFixed(2);
+                        const totalSizeMB = (totalSize / (1024 * 1024)).toFixed(2);
+                        process.stdout.write(`\r下载进度: ${percentage}% (${downloadSizeMB}MB / ${totalSizeMB}MB)`);
+                    }
                 }
             });
 
-            proc.on('error', (err) => {
-                console.error('Failed to run post-install script:', err);
-                throw new Error(`Failed to run post-install script: ${err.message}`);
+            response.pipe(fileStream);
+
+            fileStream.on('finish', () => {
+                fileStream.close();
+                // 输出换行，确保后续日志正常显示
+                if (totalSize > 0) {
+                    console.log('');
+                }
+                console.log(`成功下载 ${zipFileName}`);
+                resolve(zipFileName);
             });
+
+            fileStream.on('error', (err) => {
+                fs.unlink(filePath, () => { });
+                reject(err);
+            });
+        }).on('error', (err) => {
+            fs.unlink(filePath, () => { });
+            reject(err);
         });
-    } else {
-        console.log(`No post-install script found at ${scriptPath}`);
-    }
+    });
+}
+
+
+// 使用传统的回调式 API 并用 Promise 包装
+function readdir(dir) {
+    return new Promise((resolve, reject) => {
+        fs.readdir(dir, (err, files) => {
+            if (err) reject(err);
+            else resolve(files);
+        });
+    });
 }
 
 // 使用 Promise 和 async/await 简化异步操作
@@ -175,29 +152,174 @@ async function extractArchives() {
             fs.mkdirSync(destDir, { recursive: true });
         }
 
-        // 读取目录并过滤出 .7z 文件
-        const files = await readdir(srcDir);
-        const archiveFiles = files.filter(file => path.extname(file).toLowerCase() === '.7z');
+        // 确保 ZIP URL 已设置
+        if (!process.env.AILY_ZIP_URL) {
+            throw new Error('未设置下载基础 URL (AILY_ZIP_URL 环境变量未设置)');
+        }
 
-        console.log(`找到 ${archiveFiles.length} 个 .7z 文件`);
-
-        // 处理每个压缩文件
-        for (const file of archiveFiles) {
-            if (!file) {
-                console.error('文件名为空，跳过');
-                continue;
-            }
-
+        if (!fs.existsSync(destDir)) {
+            console.log(`目标目录不存在，创建: ${destDir}`);
             try {
-                await withRetry(async () => {
-                    await handler(file);
-                }, 3, 2000); // 重试3次，每次间隔2秒
-            } catch (error) {
-                console.error(`解压 ${file} 失败:`, error);
+                fs.mkdirSync(destDir, { recursive: true });
+            } catch (mkdirErr) {
+                throw new Error(`无法创建目标目录: ${destDir}, 错误: ${mkdirErr.message}`);
             }
+        }
+
+        // 下载zip文件
+        let fileName;
+        try {
+            fileName = await withRetry(getZipFile, 3, 2000);
+            console.log(`已下载文件: ${fileName}`);
+        } catch (downloadErr) {
+            throw new Error(`无法下载zip文件: ${downloadErr.message}`);
+        }
+
+        // 检查下载的文件是否存在和大小是否正常
+        const zipFilePath = path.join(__dirname, fileName);
+        try {
+            const stats = fs.statSync(zipFilePath);
+            if (stats.size < 1048576) { // 1MB = 1024 * 1024 bytes
+                throw new Error(`下载的文件异常小 (${stats.size} 字节)，可能下载不完整或被截断`);
+            }
+            console.log(`文件大小: ${(stats.size / (1024 * 1024)).toFixed(2)}MB`);
+        } catch (statErr) {
+            if (statErr.code === 'ENOENT') {
+                throw new Error(`下载的文件不存在: ${zipFilePath}`);
+            } else {
+                throw new Error(`检查文件失败: ${statErr.message}`);
+            }
+        }
+
+        // 在解压前检查并清理目标目录中的同名文件夹
+        try {
+            await checkAndCleanExistingFolder(fileName, destDir);
+        } catch (cleanErr) {
+            throw new Error(`清理旧文件夹失败: ${cleanErr.message}`);
+        }
+
+        // 解压zip文件
+        try {
+            await withRetry(async () => {
+                await unpack(zipFilePath, destDir);
+            }, 3, 2000); // 最多重试3次，每次间隔2秒
+            console.log(`已解压 ${fileName} 到 ${destDir}`);
+
+            // 解压成功后重命名文件夹（将@替换为_）
+            try {
+                await renameExtractedFolder(fileName, destDir);
+            } catch (renameErr) {
+                throw new Error(`重命名文件夹失败: ${renameErr.message}`);
+            }
+
+            // 解压成功后可以删除压缩文件
+            // fs.unlinkSync(zipFilePath);
+            // console.log(`已删除临时文件: ${fileName}`);
+        } catch (unpackErr) {
+            throw new Error(`解压失败: ${unpackErr.message}`);
         }
     } catch (err) {
         console.error('无法读取目录:', err);
+        process.exit(1);
+    }
+}
+
+// 检查并清理目标目录中的同名文件夹
+async function checkAndCleanExistingFolder(zipFileName, targetDir) {
+    // 从压缩文件名推断解压后的文件夹名
+    // 例如：avr@1.0.0.7z -> avr_1.0.0 (将@替换为_)
+    const folderName = zipFileName.replace(/\.(7z|zip)$/i, '').replace('@', '_');
+    const targetFolderPath = path.join(targetDir, folderName);
+
+    if (fs.existsSync(targetFolderPath)) {
+        console.log(`检测到已存在的文件夹: ${targetFolderPath}`);
+        console.log(`正在删除旧文件夹...`);
+
+        try {
+            // 递归删除整个文件夹
+            await withRetry(async () => {
+                if (typeof fs.rmSync === 'function') {
+                    fs.rmSync(targetFolderPath, { recursive: true, force: true });
+                } else {
+                    // 使用备用方法删除文件夹（适用于旧版本 Node.js）
+                    await rimraf(targetFolderPath);
+                }
+            }, 3, 1000);
+            console.log(`已成功删除旧文件夹: ${folderName}`);
+        } catch (rmErr) {
+            throw new Error(`删除文件夹失败: ${rmErr.message}`);
+        }
+    }
+}
+
+// 递归删除目录的备用函数（适用于旧版本 Node.js）
+async function rimraf(dir) {
+    return new Promise((resolve, reject) => {
+        if (!fs.existsSync(dir)) {
+            resolve();
+            return;
+        }
+
+        try {
+            const stats = fs.statSync(dir);
+            if (stats.isDirectory()) {
+                const files = fs.readdirSync(dir);
+                const promises = files.map(file => {
+                    const filePath = path.join(dir, file);
+                    return rimraf(filePath);
+                });
+
+                Promise.all(promises)
+                    .then(() => {
+                        fs.rmdir(dir, resolve);
+                    })
+                    .catch(reject);
+            } else {
+                fs.unlink(dir, resolve);
+            }
+        } catch (err) {
+            reject(err);
+        }
+    });
+}
+
+// 重命名解压后的文件夹（将@替换为_）
+async function renameExtractedFolder(zipFileName, targetDir) {
+    // 从压缩文件名获取解压后的原始文件夹名
+    // 例如：avr@1.0.0.7z -> avr@1.0.0
+    const originalFolderName = zipFileName.replace(/\.(7z|zip)$/i, '');
+    const newFolderName = originalFolderName.replace('@', '_');
+
+    // 如果文件夹名没有变化，则不需要重命名
+    if (originalFolderName === newFolderName) {
+        console.log(`文件夹名无需重命名: ${originalFolderName}`);
+        return;
+    }
+
+    const originalFolderPath = path.join(targetDir, originalFolderName);
+    const newFolderPath = path.join(targetDir, newFolderName);
+
+    if (fs.existsSync(originalFolderPath)) {
+        try {
+            // 使用重试机制进行重命名
+            await withRetry(async () => {
+                return new Promise((resolve, reject) => {
+                    fs.rename(originalFolderPath, newFolderPath, (err) => {
+                        if (err) {
+                            reject(new Error(`重命名文件夹失败: ${err.message}`));
+                        } else {
+                            resolve();
+                        }
+                    });
+                });
+            }, 3, 1000);
+
+            console.log(`已重命名文件夹: ${originalFolderName} -> ${newFolderName}`);
+        } catch (renameErr) {
+            throw new Error(`无法重命名文件夹 ${originalFolderName} 为 ${newFolderName}: ${renameErr.message}`);
+        }
+    } else {
+        console.warn(`未找到需要重命名的文件夹: ${originalFolderPath}`);
     }
 }
 
