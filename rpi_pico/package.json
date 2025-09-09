@@ -1,6 +1,6 @@
 {
   "name": "@aily-project/sdk-rpi_pico",
-  "version": "4.5.3",
+  "version": "5.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
