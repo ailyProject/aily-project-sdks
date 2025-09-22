@@ -1,6 +1,6 @@
 {
-  "name": "@aily-project/sdk-rpi_pico",
-  "version": "5.0.0",
+  "name": "@aily-project/sdk-rp2040",
+  "version": "5.1.0",
   "description": "",
   "main": "index.js",
   "scripts": {
