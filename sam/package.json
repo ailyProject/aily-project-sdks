@@ -1,6 +1,6 @@
 {
-  "name": "@aily-project/sdk-esp32",
-  "version": "3.2.1",
+  "name": "@aily-project/sdk-sam",
+  "version": "1.6.12",
   "description": "",
   "main": "index.js",
   "scripts": {
