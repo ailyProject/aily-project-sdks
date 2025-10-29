@@ -26,11 +26,10 @@ function getOSType() {
 }
 
 function getZipBaseUrl() {
-    const osInfo = getOSType();
+    // const osInfo = getOSType();
     const baseUrl = process.env.AILY_ZIP_URL || '';
-    return `${baseUrl}/sdk/${osInfo.platform}/${osInfo.arch}`;
+    return `${baseUrl}/sdk`;
 }
-
 
 // 确保 __dirname 有值，如果没有则使用当前工作目录
 const srcDir = __dirname || "";

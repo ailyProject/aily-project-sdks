@@ -25,9 +25,9 @@ function getOSType() {
 }
 
 function getZipBaseUrl() {
-    const osInfo = getOSType();
+    // const osInfo = getOSType();
     const baseUrl = process.env.AILY_ZIP_URL || '';
-    return `${baseUrl}/sdk/${osInfo.platform}/${osInfo.arch}`;
+    return `${baseUrl}/sdk`;
 }
 
 
