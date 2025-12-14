@@ -190,7 +190,7 @@ jobs:
           registry-url: ${{ secrets.REGISTRY_URL }}
       
       - name: Publish to Registry 2
-        if: steps.check-update-all.outputs.should_skip != 'true'
+        if: steps.check-update-all.outputs.should_run == 'true'
         env:
           REGISTRY_2: ${{ secrets.REGISTRY_URL_2 }}
           TOKEN_2: ${{ secrets.NPM_TOKEN_2 }}
@@ -200,11 +200,15 @@ jobs:
             exit 0
           fi
 
-          cd ${{ matrix.package }}
+          PACKAGE_DIRS=$(find . -name "package.json" -not -path "*/node_modules/*" -not -path "./package.json" -exec dirname {} \; | sed 's/^\.\///')
           
-          CURRENT_VERSION=$(node -p "require('./package.json').version")
-          PACKAGE_NAME=$(node -p "require('./package.json').name")
-          echo "Current version: $CURRENT_VERSION"
+          # 仅保留一级目录
+          FIRST_LEVEL_DIRS=()
+          for dir in $PACKAGE_DIRS; do
+            if [[ "$dir" != *"/"* ]]; then
+              FIRST_LEVEL_DIRS+=("$dir")
+            fi
+          done
 
           echo "----------------------------------------"
           echo "Processing second registry: $REGISTRY_2"
@@ -214,16 +218,29 @@ jobs:
           
           # 配置认证
           echo "//$REGISTRY_2_NO_PROTO:_authToken=$TOKEN_2" >> ~/.npmrc
+
+          for dir in "${FIRST_LEVEL_DIRS[@]}"; do
+            if [ ! -d "$dir" ]; then
+              continue
+            fi
+            cd $dir
+            
+            CURRENT_VERSION=$(node -p "require('./package.json').version")
+            PACKAGE_NAME=$(node -p "require('./package.json').name")
+            echo "Processing $dir (Version: $CURRENT_VERSION)"
           
-          # 检查是否存在
-          if npm view $PACKAGE_NAME@$CURRENT_VERSION version --registry "$REGISTRY_2" &> /dev/null; then
-             echo "Version $CURRENT_VERSION exists on $REGISTRY_2, unpublishing..."
-             npm unpublish $PACKAGE_NAME@$CURRENT_VERSION --force --registry "$REGISTRY_2"
-             sleep 5
-          fi
-          
-          # 发布
-          npm publish --access public --registry "$REGISTRY_2"
+            # 检查是否存在
+            if npm view $PACKAGE_NAME@$CURRENT_VERSION version --registry "$REGISTRY_2" &> /dev/null; then
+               echo "Version $CURRENT_VERSION exists on $REGISTRY_2, unpublishing..."
+               npm unpublish $PACKAGE_NAME@$CURRENT_VERSION --force --registry "$REGISTRY_2"
+               sleep 5
+            fi
+            
+            # 发布
+            npm publish --access public --registry "$REGISTRY_2"
+            
+            cd ..
+          done
       
       - name: Publish to Default Registry
         if: steps.check-update-all.outputs.should_run == 'true'
