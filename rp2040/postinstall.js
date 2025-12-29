@@ -2,6 +2,7 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const path = require('path');
 const https = require('https');
+const http = require('http');
 const os = require('os');
 
 // 获取当前操作系统类型
@@ -70,6 +71,63 @@ function getZipFileName() {
     return `${packageName}@${packageVersion}.7z`;
 }
 
+// 获取解压后的目标文件夹名称
+function getExtractedFolderName() {
+    const zipFileName = getZipFileName();
+    // 例如：avr@1.0.0.7z -> avr_1.0.0
+    return zipFileName.replace(/\.(7z|zip)$/i, '').replace('@', '_');
+}
+
+// 检查目标文件夹是否已存在
+function checkTargetFolderExists() {
+    const folderName = getExtractedFolderName();
+    const targetFolderPath = path.join(destDir, folderName);
+    return fs.existsSync(targetFolderPath) ? targetFolderPath : null;
+}
+
+// 文件落盘验证函数
+function verifyFileOnDisk(filePath, expectedSize) {
+    return new Promise((resolve, reject) => {
+        // 等待一小段时间确保文件系统同步
+        setTimeout(() => {
+            try {
+                // 检查文件是否存在
+                if (!fs.existsSync(filePath)) {
+                    return reject(new Error('文件不存在'));
+                }
+
+                // 获取文件状态
+                const stats = fs.statSync(filePath);
+                
+                // 检查文件大小是否匹配（如果有预期大小）
+                if (expectedSize > 0 && stats.size !== expectedSize) {
+                    return reject(new Error(`文件大小不匹配: 预期 ${expectedSize} 字节, 实际 ${stats.size} 字节`));
+                }
+
+                // 检查文件大小是否为0
+                if (stats.size === 0) {
+                    return reject(new Error('文件大小为0'));
+                }
+
+                // 尝试打开文件进行读取验证
+                const fd = fs.openSync(filePath, 'r');
+                const buffer = Buffer.alloc(Math.min(1024, stats.size));
+                const bytesRead = fs.readSync(fd, buffer, 0, buffer.length, 0);
+                fs.closeSync(fd);
+
+                if (bytesRead === 0 && stats.size > 0) {
+                    return reject(new Error('无法读取文件内容'));
+                }
+
+                console.log(`文件落盘验证通过: ${path.basename(filePath)} (${(stats.size / (1024 * 1024)).toFixed(2)}MB)`);
+                resolve();
+            } catch (err) {
+                reject(new Error(`文件验证异常: ${err.message}`));
+            }
+        }, 100); // 等待100ms确保文件系统同步
+    });
+}
+
 
 function getZipFile() {
     const zipFileName = getZipFileName();
@@ -87,7 +145,10 @@ function getZipFile() {
 
         const fileStream = fs.createWriteStream(filePath);
 
-        https.get(downloadUrl, (response) => {
+        // 根据 URL 协议选择 http 或 https 模块
+        const httpModule = downloadUrl.startsWith('https://') ? https : http;
+
+        httpModule.get(downloadUrl, (response) => {
             if (response.statusCode !== 200) {
                 fileStream.close();
                 fs.unlink(filePath, () => { });
@@ -121,13 +182,23 @@ function getZipFile() {
             response.pipe(fileStream);
 
             fileStream.on('finish', () => {
-                fileStream.close();
-                // 输出换行，确保后续日志正常显示
-                if (totalSize > 0) {
-                    console.log('');
-                }
-                console.log(`成功下载 ${zipFileName}`);
-                resolve(zipFileName);
+                fileStream.close(() => {
+                    // 输出换行，确保后续日志正常显示
+                    if (totalSize > 0) {
+                        console.log('');
+                    }
+                    
+                    // 文件落盘检查：确保文件已正确写入磁盘
+                    verifyFileOnDisk(filePath, totalSize)
+                        .then(() => {
+                            console.log(`成功下载 ${zipFileName}`);
+                            resolve(zipFileName);
+                        })
+                        .catch((verifyErr) => {
+                            fs.unlink(filePath, () => { });
+                            reject(new Error(`文件落盘验证失败: ${verifyErr.message}`));
+                        });
+                });
             });
 
             fileStream.on('error', (err) => {
@@ -176,6 +247,13 @@ async function extractArchives() {
         if (!fs.existsSync(destDir)) {
             console.log(`目标目录不存在，创建: ${destDir}`);
             fs.mkdirSync(destDir, { recursive: true });
+        }
+
+        // 检查解压后的目标目录是否已存在，如果存在则跳过执行
+        const existingFolderPath = checkTargetFolderExists();
+        if (existingFolderPath) {
+            console.log(`目标目录已存在，跳过安装: ${existingFolderPath}`);
+            return;
         }
 
         // 确保 ZIP URL 已设置
@@ -257,7 +335,7 @@ async function checkAndCleanExistingFolder(zipFileName, targetDir) {
     if (fs.existsSync(targetFolderPath)) {
         console.log(`检测到已存在的文件夹: ${targetFolderPath}`);
         console.log(`正在删除旧文件夹...`);
-
+        
         try {
             // 递归删除整个文件夹
             await withRetry(async () => {
@@ -291,7 +369,7 @@ async function rimraf(dir) {
                     const filePath = path.join(dir, file);
                     return rimraf(filePath);
                 });
-
+                
                 Promise.all(promises)
                     .then(() => {
                         fs.rmdir(dir, resolve);
@@ -312,16 +390,16 @@ async function renameExtractedFolder(zipFileName, targetDir) {
     // 例如：avr@1.0.0.7z -> avr@1.0.0
     const originalFolderName = zipFileName.replace(/\.(7z|zip)$/i, '');
     const newFolderName = originalFolderName.replace('@', '_');
-
+    
     // 如果文件夹名没有变化，则不需要重命名
     if (originalFolderName === newFolderName) {
         console.log(`文件夹名无需重命名: ${originalFolderName}`);
         return;
     }
-
+    
     const originalFolderPath = path.join(targetDir, originalFolderName);
     const newFolderPath = path.join(targetDir, newFolderName);
-
+    
     if (fs.existsSync(originalFolderPath)) {
         try {
             // 使用重试机制进行重命名
@@ -336,7 +414,7 @@ async function renameExtractedFolder(zipFileName, targetDir) {
                     });
                 });
             }, 3, 1000);
-
+            
             console.log(`已重命名文件夹: ${originalFolderName} -> ${newFolderName}`);
         } catch (renameErr) {
             throw new Error(`无法重命名文件夹 ${originalFolderName} 为 ${newFolderName}: ${renameErr.message}`);
