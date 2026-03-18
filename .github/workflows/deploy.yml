@@ -20,7 +20,7 @@ jobs:
         id: set-matrix
         run: |
           # 获取最后一次成功运行的提交SHA或默认为一个空树
-          git fetch origin refs/tags/last-deploy 2>/dev/null || true
+          git fetch origin tag last-deploy --force 2>/dev/null || true
           if git rev-parse -q --verify refs/tags/last-deploy >/dev/null; then
             BASE_SHA=$(git rev-parse refs/tags/last-deploy)
             echo "Using last successful deploy tag as base: $BASE_SHA"
@@ -295,6 +295,17 @@ jobs:
   
   update-last-deploy-tag:
     runs-on: ubuntu-latest
+    needs:
+      - detect-changes
+      - build-and-publish
+      - build-and-publish-all
+    if: >-
+      ${{
+        always() &&
+        needs.detect-changes.result == 'success' &&
+        contains(fromJson('["success","skipped"]'), needs.build-and-publish.result) &&
+        contains(fromJson('["success","skipped"]'), needs.build-and-publish-all.result)
+      }}
 
     steps:
       - name: Checkout code
